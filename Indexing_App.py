@@ -1,3 +1,4 @@
+import streamlit as st
 import os
 import math
 from collections import defaultdict, Counter
@@ -32,7 +33,7 @@ def extract_nouns_and_entities(content):
     return lemmatized_nouns
 
 def calculate_tf(doc_words):
-    tf = CustomDictionary()
+    tf = {}
     total_words = len(doc_words) # length of a single document
     word_counts = Counter(doc_words) # word occurence attached with each word
     
@@ -41,7 +42,7 @@ def calculate_tf(doc_words):
     return tf
 
 def calculate_idf(documents):
-    idf = CustomDictionary()
+    idf = {}
     total_docs = len(documents) # size of dataset
     word_doc_counts = defaultdict(int) # default dictionary of type int, so no need for initialization of data
     
@@ -55,7 +56,7 @@ def calculate_idf(documents):
     return idf
 
 def calculate_tfidf(doc_words, tf, idf):
-    tfidf = CustomDictionary()
+    tfidf = {}
     for word in doc_words:
         if word in idf:
             tfidf[word] = tf[word] * idf[word]
@@ -72,14 +73,14 @@ def phrase_match(content, query):
 
 class SearchEngine:
     def __init__(self, docs_directory="documents"):
-        self.index = CustomDefaultDict(list) # default dictionary for indexes
-        self.documents = CustomDictionary()
+        self.index = defaultdict(list) # default dictionary for indexes
+        self.documents = {}
         self.docs_directory = docs_directory
         
         if not os.path.exists(self.docs_directory):
             os.makedirs(self.docs_directory)
         
-        self.load_documents()
+        #self.load_documents()
     
     def load_documents(self):
         """Load all documents from the documents directory."""
@@ -119,15 +120,13 @@ class SearchEngine:
             doc_words = extract_nouns_and_entities(content)
             tf = calculate_tf(doc_words)
             tfidf = calculate_tfidf(doc_words, tf, idf)
-            important_terms = {term for term, score in tfidf.items() if score > 0.1} # apply a threshold and extract important terms
+            important_terms = {term for term, score in tfidf.items() if score > 0.01} # apply a threshold and extract important terms
             for term in important_terms:
                 self.index[term].append(doc_id) # important terms are made indexes for our search engine
         
     
     def add_document(self, title, content):
         self.documents[title] = content
-        self.update_index()
-        print(len(self.index.items()))
         print(f"\nDocument '{title}' added successfully!")
     
     def list_documents(self):
@@ -217,51 +216,76 @@ def get_multiline_input(prompt):
         lines.append(line)
     return "\n".join(lines)
 
-def main():
-    search_engine = SearchEngine(docs_directory="./archive/business")
-    
-    while True:
-        print("\n=== Search Engine ===")
-        print("1. Add new document")
-        print("2. List all documents")
-        print("3. Search by title")
-        print("4. Search by content")
-        print("5. Exit")
-        
-        choice = input("\nEnter your choice (1-5): ").strip()
-        
-        if choice == "1":
-            title = get_multiline_input("\nEnter document title:")
-            if not title:
-                print("Title cannot be empty!")
-                continue
-                
-            content = get_multiline_input("\nEnter document content:")
-            if not content:
-                print("Content cannot be empty!")
-                continue
-                
-            search_engine.add_document(title, content)
-            
-        elif choice == "2":
-            search_engine.list_documents()
-            
-        elif choice == "3":
-            query = input("\nEnter title to search: ")
-            results = search_engine.search_by_title(query)
-            display_results(results)
-            
-        elif choice == "4":
-            query = input("\nEnter content to search: ")
-            results = search_engine.search_by_content(query)
-            display_results(results)
-            
-        elif choice == "5":
-            print("\nThank you for using the Search Engine!")
-            break
-            
-        else:
-            print("\nInvalid choice! Please try again.")
+st.set_page_config(page_title="Search Engine", layout="centered")
 
-if __name__ == "__main__":
-    main()
+if 'search_engine' not in st.session_state:
+    st.session_state.search_engine = SearchEngine(docs_directory="./archive/business")
+
+# Access the search engine instance
+search_engine = st.session_state.search_engine
+st.title("Document Search Engine")
+st.write("This app allows you to add, list, and search documents by title or content.")
+
+# Sidebar navigation
+option = st.sidebar.selectbox("Choose an option", ["Home", "Add Document", "List Documents", "Search by Title", "Search by Content"])
+
+if option == "Home":
+    st.subheader("Welcome to the Document Search Engine")
+    st.write("Select an option from the sidebar to get started.")
+
+elif option == "Add Document":
+    st.subheader("Add New Documents")
+    uploaded_files = st.file_uploader("Upload text files", type="txt", accept_multiple_files=True)
+    if st.button("Add Documents"):
+        if uploaded_files:
+            added_files = []
+            for uploaded_file in uploaded_files:
+                title = uploaded_file.name
+                content = uploaded_file.read().decode("utf-8").strip()
+                search_engine.add_document(title, content)
+                added_files.append(title)
+
+            st.success(f"Successfully added {len(added_files)} documents!")
+            st.write("Added documents:")
+            for file in added_files:
+                st.write(file)
+        else:
+            st.error("Please upload at least one file.")
+
+elif option == "List Documents":
+    st.subheader("List of Documents")
+    docs = search_engine.documents.keys()
+    
+    if docs:
+        for idx, doc in enumerate(docs, 1):
+            st.write(f"{idx}. {doc}")
+    else:
+        st.warning("No documents found.")
+
+elif option == "Search by Title":
+    st.subheader("Search Documents by Title")
+    query = st.text_input("Enter title to search")
+    
+    if st.button("Search"):
+        results = search_engine.search_by_title(query)
+        if results:
+            st.write("Found documents:")
+            for result in results:
+                st.write(result)
+        else:
+            st.warning("No matching documents found.")
+
+elif option == "Search by Content":
+    st.subheader("Search Documents by Content")
+    query = st.text_input("Enter content to search")
+    
+    if st.button("Search"):
+        results = search_engine.search_by_content(query)
+        if results:
+            st.write("Found documents:")
+            for result in results:
+                st.write(f"**Title:** {result}")
+                st.write(f"**Content:** {search_engine.documents[result]}")
+                st.write("---")
+        else:
+            st.warning("No matching documents found.")

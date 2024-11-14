@@ -7,6 +7,132 @@ from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
 from CustomeDictionary import CustomDictionary, CustomDefaultDict
 
+def load_base_forms():
+    """Load dictionary of base forms for irregular nouns."""
+    return {
+        'children': 'child',
+        'mice': 'mouse',
+        'men': 'man',
+        'women': 'woman',
+        'teeth': 'tooth',
+        'feet': 'foot',
+        'geese': 'goose',
+        'oxen': 'ox',
+        'data': 'datum',
+        'criteria': 'criterion',
+        'phenomena': 'phenomenon'
+    }
+
+def get_base_form(word, irregular_forms):
+    """Get the base form of a word, handling both regular and irregular nouns."""
+    word = word.lower()
+    
+    # Check irregular forms first
+    if word in irregular_forms:
+        return irregular_forms[word]
+    
+    # Handle regular plural forms
+    if word.endswith('ies'):
+        return word[:-3] + 'y'
+    elif word.endswith('es'):
+        if word.endswith('ses') or word.endswith('zes') or word.endswith('ches') or word.endswith('shes'):
+            return word[:-2]
+        return word[:-1]
+    elif word.endswith('s') and not word.endswith('ss'):
+        return word[:-1]
+    
+    return word
+
+def is_likely_noun(word):
+    """Check if a word is likely to be a noun based on rules and common patterns."""
+    word = word.lower()
+    
+    # Common noun suffixes
+    noun_suffixes = (
+        'tion', 'ment', 'ness', 'ship', 'age', 'ity', 'ant', 
+        'ence', 'er', 'or', 'ist', 'ing', 'ism', 'dom',
+        'ary', 'ery', 'ory', 'cy', 'phy', 'ogy', 'ice',
+        'ade', 'al', 'an', 'ance', 'ancy', 'ant', 'arc',
+        'ard', 'ate', 'ent', 'ess', 'ice', 'ics', 'ide',
+        'ine', 'ion', 'ite', 'let', 'oid', 'oma', 'ose',
+        'ric', 'sis', 'ure'
+    )
+    
+    # Check for noun suffixes
+    if any(word.endswith(suffix) for suffix in noun_suffixes):
+        return True
+    
+    # Check for capitalization (proper nouns)
+    if word[0].isupper():
+        return True
+    
+    return False
+
+def get_word_variants(word):
+    """Generate possible variants of a word."""
+    variants = {word.lower()}
+    
+    # Add common suffix variations
+    word_lower = word.lower()
+    if word_lower.endswith('y'):
+        variants.add(word_lower[:-1] + 'ies')
+    elif word_lower.endswith('s'):
+        variants.add(word_lower[:-1])
+    else:
+        variants.add(word_lower + 's')
+        if word_lower.endswith('e'):
+            variants.add(word_lower + 's')
+        elif word_lower.endswith('y'):
+            variants.add(word_lower[:-1] + 'ies')
+        else:
+            variants.add(word_lower + 'es')
+    
+    return variants
+
+def extract_nouns_and_entities(content):
+    """Extract nouns from content using custom rules."""
+    # Load irregular forms (only done once)
+    if not hasattr(extract_nouns_and_entities, 'irregular_forms'):
+        extract_nouns_and_entities.irregular_forms = load_base_forms()
+    
+    # Common stop words that aren't nouns
+    stop_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to',
+        'for', 'with', 'by', 'from', 'up', 'down', 'is', 'are', 'was',
+        'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do',
+        'does', 'did', 'will', 'would', 'shall', 'should', 'may',
+        'might', 'must', 'can', 'could', 'of', 'this', 'that',
+        'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they'
+    }
+    
+    # Tokenize the content
+    words = tokenize_text(content)
+    
+    # Filter out stop words and extract likely nouns
+    nouns = []
+    for word in words:
+        word_lower = word.lower()
+        if word_lower not in stop_words and (
+            is_likely_noun(word) or 
+            len(word) > 3  # Include longer words as they're more likely to be nouns
+        ):
+            # Get base form of the word
+            base_form = get_base_form(word, extract_nouns_and_entities.irregular_forms)
+            nouns.append(base_form)
+    
+
+    lemmatizer = WordNetLemmatizer()
+    lemmatized_nouns = [lemmatizer.lemmatize(noun) for noun in nouns]
+    
+    return nouns
+
+def expand_query_with_variants(query_tokens):
+    """Expand query tokens with their variants."""
+    expanded_query = set()
+    for token in query_tokens:
+        expanded_query.update(get_word_variants(token))
+    return list(expanded_query)
+
 # Helper to get synonyms
 def get_synonyms(word):
     synonyms = set()
@@ -33,7 +159,7 @@ def extract_nouns_and_entities(content):
     return lemmatized_nouns
 
 def calculate_tf(doc_words):
-    tf = {}
+    tf = CustomDictionary()
     total_words = len(doc_words) # length of a single document
     word_counts = Counter(doc_words) # word occurence attached with each word
     
@@ -42,9 +168,9 @@ def calculate_tf(doc_words):
     return tf
 
 def calculate_idf(documents):
-    idf = {}
+    idf = CustomDictionary()
     total_docs = len(documents) # size of dataset
-    word_doc_counts = defaultdict(int) # default dictionary of type int, so no need for initialization of data
+    word_doc_counts = CustomDefaultDict(int) # default dictionary of type int, so no need for initialization of data
     
     for doc_words in documents: # iterate over the dataset, doc_words is content of each file
         unique_words = set(doc_words) # set removes duplicate occurences of a word
@@ -56,7 +182,7 @@ def calculate_idf(documents):
     return idf
 
 def calculate_tfidf(doc_words, tf, idf):
-    tfidf = {}
+    tfidf = CustomDictionary()
     for word in doc_words:
         if word in idf:
             tfidf[word] = tf[word] * idf[word]
@@ -73,8 +199,8 @@ def phrase_match(content, query):
 
 class SearchEngine:
     def __init__(self, docs_directory="documents"):
-        self.index = defaultdict(list) # default dictionary for indexes
-        self.documents = {}
+        self.index = CustomDefaultDict(list) # default dictionary for indexes
+        self.documents = CustomDictionary()
         self.docs_directory = docs_directory
         
         if not os.path.exists(self.docs_directory):
@@ -124,6 +250,8 @@ class SearchEngine:
             for term in important_terms:
                 self.index[term].append(doc_id) # important terms are made indexes for our search engine
         
+        print(self.index)
+        
     
     def add_document(self, title, content):
         self.documents[title] = content
@@ -162,38 +290,35 @@ class SearchEngine:
                         if pos in ('NN', 'NNS', 'NNP', 'NNPS')]
             
             # Get expanded tokens only for nouns
-            expanded_noun_tokens = []
+            expanded_noun_tokens = {}
             for noun in query_nouns:
-                expanded_noun_tokens.extend(expand_query_with_synonyms([noun]))
+                # Store noun and its synonyms
+                expanded_noun_tokens[noun] = expand_query_with_synonyms([noun])
             
+            print(f"Query Nouns: {expanded_noun_tokens}")
             # Find documents that match the nouns using the index
             noun_matching_docs = set()
-            if expanded_noun_tokens:
-                noun_matching_docs = set(self.index.get(expanded_noun_tokens[0], []))
-                for token in expanded_noun_tokens[1:]:
-                    if token in self.index:
-                        noun_matching_docs &= set(self.index[token])
             
-            # If we found documents matching nouns, filter them further using non-noun terms
-            if noun_matching_docs:
-                non_noun_tokens = [word for word, pos in query_pos_tags 
-                                if pos not in ('NN', 'NNS', 'NNP', 'NNPS')]
+            if expanded_noun_tokens:
+                # Get the first noun and its synonyms
+                first_noun = list(expanded_noun_tokens.keys())[0]
+                # Start with documents matching the first noun
+                noun_matching_docs = set(self.index.get(first_noun, []))
+                # Add documents matching its synonyms
+                for synonym in expanded_noun_tokens[first_noun]:
+                    noun_matching_docs |= set(self.index.get(synonym, []))
                 
-                # If there are no non-noun tokens, return the noun matches
-                if not non_noun_tokens:
-                    return noun_matching_docs
-                
-                # For each document that matched nouns, check if it contains the non-noun terms
-                for doc_id in noun_matching_docs:
-                    content = self.documents[doc_id].lower()
-                    if all(token.lower() in content for token in non_noun_tokens):
-                        matching_docs.add(doc_id)
-            else:
-                # If no noun matches found, fall back to basic content search
-                for doc_id, content in self.documents.items():
-                    content_lower = content.lower()
-                    if all(token.lower() in content_lower for token in query_tokens):
-                        matching_docs.add(doc_id)
+                # Process remaining nouns
+                for noun in list(expanded_noun_tokens.keys())[1:]:
+                    # Get documents matching current noun
+                    current_docs = set(self.index.get(noun, []))
+                    # Add documents matching its synonyms
+                    for synonym in expanded_noun_tokens[noun]:
+                        current_docs |= set(self.index.get(synonym, []))
+
+                    # Intersect with previous results
+                    noun_matching_docs &= current_docs
+            return noun_matching_docs
         
         return matching_docs
 
@@ -245,6 +370,7 @@ elif option == "Add Document":
                 search_engine.add_document(title, content)
                 added_files.append(title)
 
+            search_engine.update_index()
             st.success(f"Successfully added {len(added_files)} documents!")
             st.write("Added documents:")
             for file in added_files:
